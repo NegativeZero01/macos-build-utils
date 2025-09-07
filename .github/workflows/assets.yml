@@ -1,4 +1,4 @@
-name: Extract all .car files with Asset Catalog Tinkerer
+name: Extract all .car files with Asset Catalog Tinkerer (fixed)
 
 on:
   workflow_dispatch:
@@ -12,36 +12,28 @@ jobs:
 
       - name: Install Asset Catalog Tinkerer (Homebrew cask)
         run: |
-          # Ensure Homebrew is set up on the mac runner and install the cask.
-          # (Homebrew is present on GitHub mac runners.)
           brew update
           brew install --cask asset-catalog-tinkerer || brew reinstall --cask asset-catalog-tinkerer
-          ls -la /Applications | grep -i "Asset Catalog"
+          ls -la /Applications | grep -i "Asset Catalog" || true
 
-      - name: Show act CLI version / help (for debugging)
+      - name: Extract every Assets/*.car to Assets/<basename>/
         run: |
+          set -euo pipefail
+
+          # Point to the act binary (no escaped spaces)
           ACT_BIN="/Applications/Asset Catalog Tinkerer.app/Contents/MacOS/act"
-          if [ -x "$ACT_BIN" ]; then
-            echo "act binary found: $ACT_BIN"
-            "$ACT_BIN" --version || true
-            echo "---- act --help ----"
-            "$ACT_BIN" --help || true
-            echo "---- end help ----"
-          else
-            echo "act binary not found; listing app bundle contents:"
+
+          if [ ! -x "$ACT_BIN" ]; then
+            echo "act binary not found at: $ACT_BIN"
+            echo "Listing app bundle contents for debugging:"
             ls -la "/Applications/Asset Catalog Tinkerer.app/Contents/MacOS" || true
             exit 1
           fi
 
-      - name: Extract every Assets/*.car to Assets/<basename>/
-        env:
-          ACT_BIN: /Applications/Asset\ Catalog\ Tinkerer.app/Contents/MacOS/act
-        run: |
-          set -euo pipefail
-          mkdir -p extracted_tmp
+          echo "Using act binary: $ACT_BIN"
           shopt -s nullglob
-          found=0
 
+          found=0
           for car in Assets/*.car; do
             found=1
             base="$(basename "$car" .car)"
@@ -49,41 +41,35 @@ jobs:
             mkdir -p "$out"
             echo "==== Extracting $car -> $out ===="
 
-            # try a few possible act syntaxes (safe, non-destructive), stop on first success
-            # different versions expose different subcommands; we attempt several variants:
-            if "$ACT_BIN" export --help > /dev/null 2>&1; then
-              echo "Trying: act export"
-              "$ACT_BIN" export "$car" -o "$out" || true
-            fi
+            # Save info.json (metadata)
+            "$ACT_BIN" --input "$car" info > "$out/info.json" 2>/dev/null || true
 
-            if [ -z "$(ls -A "$out" 2>/dev/null || true)" ] ; then
-              if "$ACT_BIN" extract --help > /dev/null 2>&1; then
-                echo "Trying: act extract"
-                "$ACT_BIN" extract "$car" "$out" || true
-              fi
-            fi
-
-            if [ -z "$(ls -A "$out" 2>/dev/null || true)" ] ; then
-              # older/newer variants: some versions accept: act export <car> <dir>  or act <car> --export <dir>
-              echo "Trying fallback invocations"
-              "$ACT_BIN" "$car" --export "$out" || true
-              "$ACT_BIN" "$car" export "$out" || true
-              "$ACT_BIN" export "$car" "$out" || true
-            fi
-
-            # As a last-resort, print the act help so you can inspect the exact usage in the run logs
-            if [ -z "$(ls -A "$out" 2>/dev/null || true)" ] ; then
-              echo "Extraction created no files for $car. Dumping act --help to logs for debugging:"
-              "$ACT_BIN" --help || true
+            # Try the most-likely extract invocations; stop when one works
+            # 1) act --input <car> extract <out>
+            if "$ACT_BIN" --input "$car" extract "$out" 2>/dev/null; then
+              echo "Succeeded: act --input <car> extract <out>"
+            # 2) act --input <car> extract --output <out>
+            elif "$ACT_BIN" --input "$car" extract --output "$out" 2>/dev/null; then
+              echo "Succeeded: act --input <car> extract --output <out>"
+            # 3) act --input <car> extract -o <out>
+            elif "$ACT_BIN" --input "$car" extract -o "$out" 2>/dev/null; then
+              echo "Succeeded: act --input <car> extract -o <out>"
+            # 4) fallback: try calling extract without --input (older/newer cli variants)
+            elif "$ACT_BIN" extract "$car" "$out" 2>/dev/null; then
+              echo "Succeeded: act extract <car> <out>"
             else
-              echo "Files extracted to $out:"
-              ls -la "$out" | sed -n '1,200p' || true
+              echo "All automatic extract attempts failed for $car."
+              echo "Printing act extract help to logs:"
+              # attempt to print subcommand help in several ways
+              "$ACT_BIN" --input "$car" extract --help 2>/dev/null || "$ACT_BIN" extract --help 2>/dev/null || "$ACT_BIN" --help 2>/dev/null || true
             fi
+
+            echo "Contents of $out (first 200 lines):"
+            ls -la "$out" | sed -n '1,200p' || true
           done
 
           if [ "$found" -eq 0 ]; then
-            echo "No .car files found in Assets/. Make sure they are committed to the repo at path Assets/*.car"
-            # don't fail the job — user might want to run later after uploading .car files
+            echo "No .car files found in Assets/ — make sure you committed them to the repo path Assets/*.car"
           fi
 
       - name: Upload extracted folders as artifact
@@ -92,4 +78,3 @@ jobs:
           name: extracted-assets
           path: |
             Assets/*
-            extracted_tmp
