@@ -14,7 +14,6 @@ jobs:
           echo "Runner temp: $RUNNER_TEMP"
           mkdir -p build
           shopt -s nullglob
-
           # Loop each directory in Assets/
           for dir in Assets/*; do
             if [ ! -d "$dir" ]; then
@@ -25,7 +24,6 @@ jobs:
             rm -rf "$tmp_xc" "$RUNNER_TEMP/${base}_build"
             mkdir -p "$tmp_xc"
             echo "Processing folder: $dir -> temporary .xcassets: $tmp_xc"
-
             # 1) If there are existing .imageset subfolders in the dir, copy them as-is.
             found_imagesets=0
             for iset in "$dir"/*.imageset; do
@@ -35,7 +33,6 @@ jobs:
                 cp -R "$iset" "$tmp_xc/"
               fi
             done
-
             # 2) Copy any existing .xcassets content (if someone already placed an .xcassets folder inside)
             for xc in "$dir"/*.xcassets; do
               if [ -d "$xc" ]; then
@@ -44,7 +41,6 @@ jobs:
                 cp -R "$xc"/* "$tmp_xc/"
               fi
             done
-
             # 3) If no imagesets found, create imagesets from loose image files
             if [ "$found_imagesets" -eq 0 ]; then
               echo "No .imageset detected. Creating imagesets from loose image files..."
