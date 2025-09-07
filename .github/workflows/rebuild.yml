@@ -78,10 +78,10 @@ jobs:
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
                 # use Python to generate a safe JSON Contents.json listing all files with guessed scale
-                python3 - <<PY > "$iset/Contents.json"
-import json, os
-# 'iset' path is expanded by the shell into this heredoc before Python runs
-iset_dir = "${iset}"
+                # use a single-quoted heredoc so shell doesn't expand characters inside the Python code
+                python3 - "$iset" <<'PY' > "$iset/Contents.json"
+import json, os, sys
+iset_dir = sys.argv[1]
 files = sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))])
 images = []
 for fn in files:
