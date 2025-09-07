@@ -1,0 +1,23 @@
+name: macOS Runner
+
+on:
+  workflow_dispatch:
+
+jobs:
+  macos-job:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Print macOS info
+        run: |
+          sw_vers
+          xcode-select -p
+          echo "Current directory: $(pwd)"
+          
+      # placeholder
+      - name: Run macOS commands
+        run: |
+          echo "command"
