@@ -67,8 +67,7 @@ jobs:
               # generate Contents.json for each created imageset using the original single-line Python command
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
-                # single-line Python generates the JSON and writes to Contents.json
-                python3 -c 'import json,os,sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[]; for fn in files: n=fn.rsplit(".",1)[0]; scale=("3x" if n.endswith("@3x") else ("2x" if n.endswith("@2x") else "1x")); images.append({"idiom":"universal","filename":fn,"scale":scale}); obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
+                python3 -c 'import json, os, sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[{"idiom":"universal","filename":fn,"scale":("3x" if fn.rsplit(".",1)[0].endswith("@3x") else ("2x" if fn.rsplit(".",1)[0].endswith("@2x") else "1x"))} for fn in files]; obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
               done
             else
               echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
