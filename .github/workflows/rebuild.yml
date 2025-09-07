@@ -64,27 +64,15 @@ jobs:
                 cp "$img" "$imageset_dir/$filename"
               done
             
-              # generate Contents.json for each created imageset using a multi-line Python command
+              # generate Contents.json for each created imageset using a single-line Python command
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
-                python3 - "$iset" <<EOF > "$iset/Contents.json"
-import json, os, sys
-
-iset_dir = sys.argv[1]
-files = sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir, f))])
-images = []
-for fn in files:
-    name_noext = fn.rsplit(".", 1)[0]
-    scale = ("3x" if name_noext.endswith("@3x") else ("2x" if name_noext.endswith("@2x") else "1x"))
-    images.append({"idiom": "universal", "filename": fn, "scale": scale})
-
-obj = {"images": images, "info": {"version": 1, "author": "xcode"}}
-print(json.dumps(obj, indent=2))
-EOF
+                # single-line Python generates the JSON and writes to Contents.json
+                python3 -c 'import json,os,sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[]; for fn in files: n=fn.rsplit(".",1)[0]; scale=("3x" if n.endswith("@3x") else ("2x" if n.endswith("@2x") else "1x")); images.append({"idiom":"universal","filename":fn,"scale":scale}); obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
               done
             else
               echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
-            fi
+            fi # This is the missing `fi`
 
             # 4) compile the .xcassets using actool
             out_build="$RUNNER_TEMP/${base}_build"
