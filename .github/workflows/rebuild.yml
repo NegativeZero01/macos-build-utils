@@ -1,0 +1,132 @@
+name: Rebuild .car files from Assets/<folder>/
+
+on:
+  workflow_dispatch:
+
+jobs:
+  rebuild:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare and rebuild each Assets/<folder> -> Assets/<folder>.car
+        run: |
+          set -euo pipefail
+          echo "Runner temp: $RUNNER_TEMP"
+          mkdir -p build
+          shopt -s nullglob
+
+          # Loop each directory in Assets/
+          for dir in Assets/*; do
+            if [ ! -d "$dir" ]; then
+              continue
+            fi
+
+            base=$(basename "$dir")
+            tmp_xc="$RUNNER_TEMP/${base}.xcassets"
+            rm -rf "$tmp_xc" "$RUNNER_TEMP/${base}_build"
+            mkdir -p "$tmp_xc"
+
+            echo "Processing folder: $dir -> temporary .xcassets: $tmp_xc"
+
+            # 1) If there are existing .imageset subfolders in the dir, copy them as-is.
+            found_imagesets=0
+            for iset in "$dir"/*.imageset; do
+              if [ -d "$iset" ]; then
+                found_imagesets=1
+                echo "Copying existing imageset: $iset"
+                cp -R "$iset" "$tmp_xc/"
+              fi
+            done
+
+            # 2) Copy any existing .xcassets content (if someone already placed an .xcassets folder inside)
+            for xc in "$dir"/*.xcassets; do
+              if [ -d "$xc" ]; then
+                found_imagesets=1
+                echo "Copying existing .xcassets contents from $xc"
+                cp -R "$xc"/* "$tmp_xc/"
+              fi
+            done
+
+            # 3) If no imagesets found, create imagesets from loose image files
+            if [ "$found_imagesets" -eq 0 ]; then
+              echo "No .imageset detected. Creating imagesets from loose image files..."
+              for img in "$dir"/*.{png,jpg,jpeg,webp,pdf,svg} 2>/dev/null; do
+                [ -f "$img" ] || continue
+                filename=$(basename "$img")
+                # strip extension
+                name_noext="${filename%.*}"
+                # detect scale suffix
+                scale="1x"
+                baseimg="$name_noext"
+                if [[ "$name_noext" == *"@3x" ]]; then
+                  baseimg="${name_noext%@3x}"
+                elif [[ "$name_noext" == *"@2x" ]]; then
+                  baseimg="${name_noext%@2x}"
+                elif [[ "$name_noext" == *"@1x" ]]; then
+                  baseimg="${name_noext%@1x}"
+                else
+                  baseimg="$name_noext"
+                fi
+
+                imageset_dir="$tmp_xc/${baseimg}.imageset"
+                mkdir -p "$imageset_dir"
+                # copy original file into imageset (preserve filename)
+                cp "$img" "$imageset_dir/$filename"
+              done
+
+              # generate Contents.json for each created imageset
+              for iset in "$tmp_xc"/*.imageset; do
+                [ -d "$iset" ] || continue
+                # use Python to generate a safe JSON Contents.json listing all files with guessed scale
+                python3 - <<PY > "$iset/Contents.json"
+import json,os
+iset_dir = "${iset}"
+files = sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))])
+images = []
+for fn in files:
+    n = fn.rsplit('.',1)[0]
+    scale = "1x"
+    if n.endswith("@3x"):
+        scale = "3x"
+    elif n.endswith("@2x"):
+        scale = "2x"
+    elif n.endswith("@1x"):
+        scale = "1x"
+    images.append({"idiom":"universal","filename":fn,"scale":scale})
+obj = {"images": images, "info": {"version":1, "author":"xcode"}}
+print(json.dumps(obj, indent=2))
+PY
+              done
+            else
+              echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
+            fi
+
+            # 4) compile the .xcassets using actool
+            out_build="$RUNNER_TEMP/${base}_build"
+            mkdir -p "$out_build"
+            echo "Running actool for $tmp_xc -> $out_build"
+            # Use a reasonable minimum deployment target; adjust if needed
+            xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || {
+              echo "actool returned non-zero exit code. Check logs. Continuing to next folder."
+            }
+
+            # 5) move produced Assets.car into Assets/<basename>.car
+            if [ -f "$out_build/Assets.car" ]; then
+              mv -f "$out_build/Assets.car" "Assets/${base}.car"
+              echo "Created Assets/${base}.car"
+            else
+              echo "No Assets.car produced for $base (actool may have failed or produced nothing)."
+            fi
+
+            # cleanup temp
+            rm -rf "$tmp_xc" "$out_build"
+          done
+
+      - name: Upload rebuilt .car files
+        uses: actions/upload-artifact@v4
+        with:
+          name: rebuilt-cars
+          path: |
+            Assets/*.car
