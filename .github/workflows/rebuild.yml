@@ -16,18 +16,21 @@ jobs:
           echo "Runner temp: $RUNNER_TEMP"
           mkdir -p build
           shopt -s nullglob
+
           # Loop each directory in Assets/
           for dir in Assets/*; do
             if [ ! -d "$dir" ]; then
               continue
             fi
+
             base=$(basename "$dir")
             tmp_xc="$RUNNER_TEMP/${base}.xcassets"
             rm -rf "$tmp_xc" "$RUNNER_TEMP/${base}_build"
             mkdir -p "$tmp_xc"
+
             echo "Processing folder: $dir -> temporary .xcassets: $tmp_xc"
 
-            # 1) Copy existing .imageset subfolders if present
+            # 1) If there are existing .imageset subfolders in the dir, copy them as-is.
             found_imagesets=0
             for iset in "$dir"/*.imageset; do
               if [ -d "$iset" ]; then
@@ -37,7 +40,7 @@ jobs:
               fi
             done
 
-            # 2) Copy any existing .xcassets content
+            # 2) Copy any existing .xcassets content (if someone already placed an .xcassets folder inside)
             for xc in "$dir"/*.xcassets; do
               if [ -d "$xc" ]; then
                 found_imagesets=1
@@ -52,8 +55,11 @@ jobs:
               for img in "$dir"/*.{png,jpg,jpeg,webp,pdf,svg} 2>/dev/null; do
                 [ -f "$img" ] || continue
                 filename=$(basename "$img")
+                # strip extension
                 name_noext="${filename%.*}"
                 baseimg="$name_noext"
+
+                # detect scale suffix and normalize base name
                 if [[ "$name_noext" == *"@3x" ]]; then
                   baseimg="${name_noext%@3x}"
                 elif [[ "$name_noext" == *"@2x" ]]; then
@@ -61,17 +67,21 @@ jobs:
                 elif [[ "$name_noext" == *"@1x" ]]; then
                   baseimg="${name_noext%@1x}"
                 fi
+
                 imageset_dir="$tmp_xc/${baseimg}.imageset"
                 mkdir -p "$imageset_dir"
+                # copy original file into imageset (preserve filename)
                 cp "$img" "$imageset_dir/$filename"
               done
 
               # generate Contents.json for each created imageset
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
-                python3 - <<'PY' > "$iset/Contents.json"
+                # use Python to generate a safe JSON Contents.json listing all files with guessed scale
+                python3 - <<PY > "$iset/Contents.json"
 import json, os
-iset_dir = os.environ.get('iset_dir', '') or """$iset"""
+# 'iset' path is expanded by the shell into this heredoc before Python runs
+iset_dir = "${iset}"
 files = sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))])
 images = []
 for fn in files:
@@ -96,8 +106,9 @@ PY
             out_build="$RUNNER_TEMP/${base}_build"
             mkdir -p "$out_build"
             echo "Running actool for $tmp_xc -> $out_build"
+            # Use a reasonable minimum deployment target; adjust if needed
             xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || {
-              echo "actool returned non-zero exit code. Continuing to next folder."
+              echo "actool returned non-zero exit code. Check logs. Continuing to next folder."
             }
 
             # 5) move produced Assets.car into Assets/<basename>.car
@@ -105,9 +116,10 @@ PY
               mv -f "$out_build/Assets.car" "Assets/${base}.car"
               echo "Created Assets/${base}.car"
             else
-              echo "No Assets.car produced for $base."
+              echo "No Assets.car produced for $base (actool may have failed or produced nothing)."
             fi
 
+            # cleanup temp
             rm -rf "$tmp_xc" "$out_build"
           done
 
