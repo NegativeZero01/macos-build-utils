@@ -1,8 +1,5 @@
 name: Rebuild .car files from Assets/<folder>/
-
-on:
-  workflow_dispatch:
-
+on: workflow_dispatch:
 jobs:
   rebuild:
     runs-on: macos-latest
@@ -22,12 +19,10 @@ jobs:
             if [ ! -d "$dir" ]; then
               continue
             fi
-
             base=$(basename "$dir")
             tmp_xc="$RUNNER_TEMP/${base}.xcassets"
             rm -rf "$tmp_xc" "$RUNNER_TEMP/${base}_build"
             mkdir -p "$tmp_xc"
-
             echo "Processing folder: $dir -> temporary .xcassets: $tmp_xc"
 
             # 1) If there are existing .imageset subfolders in the dir, copy them as-is.
@@ -58,7 +53,6 @@ jobs:
                 # strip extension
                 name_noext="${filename%.*}"
                 baseimg="$name_noext"
-
                 # detect scale suffix and normalize base name
                 if [[ "$name_noext" == *"@3x" ]]; then
                   baseimg="${name_noext%@3x}"
@@ -67,7 +61,6 @@ jobs:
                 elif [[ "$name_noext" == *"@1x" ]]; then
                   baseimg="${name_noext%@1x}"
                 fi
-
                 imageset_dir="$tmp_xc/${baseimg}.imageset"
                 mkdir -p "$imageset_dir"
                 # copy original file into imageset (preserve filename)
@@ -78,22 +71,18 @@ jobs:
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
                 # single-line Python generates the JSON and writes to Contents.json
-                python3 -c 'import json,os,sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[]; 
-for fn in files: n=fn.rsplit(".",1)[0]; scale=("3x" if n.endswith("@3x") else ("2x" if n.endswith("@2x") else "1x")); images.append({"idiom":"universal","filename":fn,"scale":scale}); 
-obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
+                python3 -c 'import json,os,sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[]; for fn in files: n=fn.rsplit(".",1)[0]; scale=("3x" if n.endswith("@3x") else ("2x" if n.endswith("@2x") else "1x")); images.append({"idiom":"universal","filename":fn,"scale":scale}); obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
               done
             else
               echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
-            fi
+            fi # This is the missing `fi`
 
             # 4) compile the .xcassets using actool
             out_build="$RUNNER_TEMP/${base}_build"
             mkdir -p "$out_build"
             echo "Running actool for $tmp_xc -> $out_build"
             # Use a reasonable minimum deployment target; adjust if needed
-            xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || {
-              echo "actool returned non-zero exit code. Check logs. Continuing to next folder."
-            }
+            xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || { echo "actool returned non-zero exit code. Check logs. Continuing to next folder." }
 
             # 5) move produced Assets.car into Assets/<basename>.car
             if [ -f "$out_build/Assets.car" ]; then
@@ -106,7 +95,7 @@ obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(ob
             # cleanup temp
             rm -rf "$tmp_xc" "$out_build"
           done
-
+      
       - name: Upload rebuilt .car files
         uses: actions/upload-artifact@v4
         with:
