@@ -74,29 +74,13 @@ jobs:
                 cp "$img" "$imageset_dir/$filename"
               done
 
-              # generate Contents.json for each created imageset
+              # generate Contents.json for each created imageset using a single-line Python command
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
-                # use Python to generate a safe JSON Contents.json listing all files with guessed scale
-                # use a single-quoted heredoc so shell doesn't expand characters inside the Python code
-                python3 - "$iset" <<'PY' > "$iset/Contents.json"
-import json, os, sys
-iset_dir = sys.argv[1]
-files = sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))])
-images = []
-for fn in files:
-    n = fn.rsplit('.',1)[0]
-    scale = "1x"
-    if n.endswith("@3x"):
-        scale = "3x"
-    elif n.endswith("@2x"):
-        scale = "2x"
-    elif n.endswith("@1x"):
-        scale = "1x"
-    images.append({"idiom":"universal","filename":fn,"scale":scale})
-obj = {"images": images, "info": {"version":1, "author":"xcode"}}
-print(json.dumps(obj, indent=2))
-PY
+                # single-line Python generates the JSON and writes to Contents.json
+                python3 -c 'import json,os,sys; iset_dir=sys.argv[1]; files=sorted([f for f in os.listdir(iset_dir) if os.path.isfile(os.path.join(iset_dir,f))]); images=[]; 
+for fn in files: n=fn.rsplit(".",1)[0]; scale=("3x" if n.endswith("@3x") else ("2x" if n.endswith("@2x") else "1x")); images.append({"idiom":"universal","filename":fn,"scale":scale}); 
+obj={"images":images,"info":{"version":1,"author":"xcode"}}; print(json.dumps(obj,indent=2))' "$iset" > "$iset/Contents.json"
               done
             else
               echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
