@@ -1,5 +1,7 @@
 name: Rebuild .car files from Assets/<folder>/
-on: workflow_dispatch:
+on:
+  workflow_dispatch
+
 jobs:
   rebuild:
     runs-on: macos-latest
