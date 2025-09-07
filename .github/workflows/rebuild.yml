@@ -44,7 +44,7 @@ jobs:
             # 3) If no imagesets found, create imagesets from loose image files
             if [ "$found_imagesets" -eq 0 ]; then
               echo "No .imageset detected. Creating imagesets from loose image files..."
-              for img in "$dir"/*.{png,jpg,jpeg,webp,pdf,svg} 2>/dev/null; do
+              for img in "$dir"/*.{png,jpg,jpeg,webp,pdf,svg}; do
                 [ -f "$img" ] || continue
                 filename=$(basename "$img")
                 # strip extension
@@ -64,7 +64,7 @@ jobs:
                 cp "$img" "$imageset_dir/$filename"
               done
             
-              # generate Contents.json for each created imageset using a single-line Python command
+              # generate Contents.json for each created imageset using the original single-line Python command
               for iset in "$tmp_xc"/*.imageset; do
                 [ -d "$iset" ] || continue
                 # single-line Python generates the JSON and writes to Contents.json
@@ -72,13 +72,12 @@ jobs:
               done
             else
               echo "Existing imagesets / xcassets copied; skipping automatic imageset generation."
-            fi # This is the missing `fi`
-
+            fi
             # 4) compile the .xcassets using actool
             out_build="$RUNNER_TEMP/${base}_build"
             mkdir -p "$out_build"
             echo "Running actool for $tmp_xc -> $out_build"
-            xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || { echo "actool returned non-zero exit code. Check logs. Continuing to next folder." >&2; }
+            xcrun actool "$tmp_xc" --compile "$out_build" --platform iphoneos --minimum-deployment-target 13.0 || { echo "actool returned non-zero exit code for $base. Check logs." >&2; }
 
             # 5) move produced Assets.car into Assets/<basename>.car
             if [ -f "$out_build/Assets.car" ]; then
